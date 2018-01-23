@@ -65,7 +65,7 @@ function TFClient(options) {
     serviceType: 'tf2_web_republisher/RepublishTFs'
   });
 
-  this.actionClient.on('restore', this.updateGoal);
+  this.actionClient.on('restore', this.updateGoal)
 }
 
 /**
