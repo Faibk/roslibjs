@@ -54,7 +54,8 @@ function ActionClient(options) {
   this.resultListener = new Topic({
     ros : this.ros,
     name : this.serverName + '/result',
-    messageType : this.actionName + 'Result'
+    messageType : this.actionName + 'Result',
+    latch: true
   });
 
   this.goalTopic = new Topic({
@@ -77,12 +78,15 @@ function ActionClient(options) {
   if (!this.omitStatus) {
     this.statusListener.subscribe(function(statusMessage) {
       receivedStatus = true;
-      statusMessage.status_list.forEach(function(status) {
-        var goal = that.goals[status.goal_id.id];
-        if (goal) {
-          goal.emit('status', status);
+      var idMatch = function(goal_id, status){return status.goal_id.id === goal_id;};
+      for (var goal_id in that.goals) {
+        var status = statusMessage.status_list.find(idMatch.bind(this, goal_id));
+        if (status) {
+          that.goals[goal_id].emit('status', status);
+        } else {
+          that.goals[goal_id].isFinished = true;
         }
-      });
+      }
     });
   }
 

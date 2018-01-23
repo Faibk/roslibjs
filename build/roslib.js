@@ -905,7 +905,8 @@ function ActionClient(options) {
   this.resultListener = new Topic({
     ros : this.ros,
     name : this.serverName + '/result',
-    messageType : this.actionName + 'Result'
+    messageType : this.actionName + 'Result',
+    latch: true
   });
 
   this.goalTopic = new Topic({
@@ -928,12 +929,15 @@ function ActionClient(options) {
   if (!this.omitStatus) {
     this.statusListener.subscribe(function(statusMessage) {
       receivedStatus = true;
-      statusMessage.status_list.forEach(function(status) {
-        var goal = that.goals[status.goal_id.id];
-        if (goal) {
-          goal.emit('status', status);
+      var idMatch = function(goal_id, status){return status.goal_id.id === goal_id;};
+      for (var goal_id in that.goals) {
+        var status = statusMessage.status_list.find(idMatch.bind(this, goal_id));
+        if (status) {
+          that.goals[goal_id].emit('status', status);
+        } else {
+          that.goals[goal_id].isFinished = true;
         }
-      });
+      }
     });
   }
 
@@ -3000,6 +3004,8 @@ TFClient.prototype.updateGoal = function() {
   if(this.ros.groovyCompatibility) {
     if (this.currentGoal) {
       this.currentGoal.cancel();
+    } else {
+      this.ros.once('connection', this.updateGoal.bind(this));
     }
     this.currentGoal = new Goal({
       actionClient : this.actionClient,
@@ -3099,6 +3105,9 @@ TFClient.prototype.unsubscribe = function(frameID, callback) {
  * Unsubscribe and unadvertise all topics associated with this TFClient.
  */
 TFClient.prototype.dispose = function() {
+  if (this.currentGoal) {
+    this.currentGoal.cancel();
+  }
   this.actionClient.dispose();
   if (this.currentTopic) {
     this.currentTopic.unsubscribe();

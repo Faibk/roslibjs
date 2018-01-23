@@ -111,6 +111,8 @@ TFClient.prototype.updateGoal = function() {
   if(this.ros.groovyCompatibility) {
     if (this.currentGoal) {
       this.currentGoal.cancel();
+    } else {
+      this.ros.once('connection', this.updateGoal.bind(this));
     }
     this.currentGoal = new Goal({
       actionClient : this.actionClient,
@@ -210,6 +212,9 @@ TFClient.prototype.unsubscribe = function(frameID, callback) {
  * Unsubscribe and unadvertise all topics associated with this TFClient.
  */
 TFClient.prototype.dispose = function() {
+  if (this.currentGoal) {
+    this.currentGoal.cancel();
+  }
   this.actionClient.dispose();
   if (this.currentTopic) {
     this.currentTopic.unsubscribe();
