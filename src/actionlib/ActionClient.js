@@ -5,7 +5,6 @@
 
 var Topic = require('../core/Topic');
 var Message = require('../core/Message');
-var Goal = require('Goal');
 var EventEmitter2 = require('eventemitter2').EventEmitter2;
 
 /**
@@ -97,7 +96,7 @@ function ActionClient(options) {
       });
       that.goals.forEach(function(goal){
         //existing goal not in list --> set finished/status, emit result, which code? we do not know if aborted, cancelled or succeeded!
-        var status = statusMessage.status_list.some(function(status){return status.goal_id.id === goal.goalID;})
+        var status = statusMessage.status_list.some(function(status){return status.goal_id.id === goal.goalID;});
         if (status) {
           that.emit('finish', goal); //maybe emit result with 
           //goal.isFinished = true;

@@ -905,7 +905,8 @@ function ActionClient(options) {
   this.resultListener = new Topic({
     ros : this.ros,
     name : this.serverName + '/result',
-    messageType : this.actionName + 'Result'
+    messageType : this.actionName + 'Result',
+    latch: true
   });
 
   this.goalTopic = new Topic({
@@ -929,10 +930,29 @@ function ActionClient(options) {
     this.statusListener.subscribe(function(statusMessage) {
       receivedStatus = true;
       statusMessage.status_list.forEach(function(status) {
+
+        //goal exists --> update status with emit status (goal updates)        
         var goal = that.goals[status.goal_id.id];
         if (goal) {
           goal.emit('status', status);
         }
+
+        //check status
+        //emit restored(status) when ros has goal, fe not
+        //emit finished(goal) when fe has goal, ros not
+
+        else {
+          that.emit('restore', status);
+        }
+      });
+      that.goals.forEach(function(goal){
+        //existing goal not in list --> set finished/status, emit result, which code? we do not know if aborted, cancelled or succeeded!
+        var status = statusMessage.status_list.some(function(status){return status.goal_id.id === goal.goalID;});
+        if (status) {
+          that.emit('finish', goal); //maybe emit result with 
+          //goal.isFinished = true;
+        }
+        //existing goal not in list--> recreate at ros? only at the next abstraction, e.g. tfclient because ongoing. we need events if others want recreation
       });
     });
   }
@@ -2953,6 +2973,8 @@ function TFClient(options) {
     name: this.repubServiceName,
     serviceType: 'tf2_web_republisher/RepublishTFs'
   });
+
+  this.actionClient.on('restore', this.updateGoal);
 }
 
 /**
