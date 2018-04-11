@@ -826,7 +826,7 @@ module.exports = shouldUseNative() ? Object.assign : function (target, source) {
  * If you use nodejs, this is the variable you get when you require('roslib')
  */
 var ROSLIB = this.ROSLIB || {
-  REVISION : '0.19.0-SNAPSHOT'
+  REVISION : '0.20.0'
 };
 
 var assign = require('object-assign');
@@ -2148,7 +2148,8 @@ function Service(options) {
 }
 Service.prototype.__proto__ = EventEmitter2.prototype;
 /**
- * Calls the service. Returns the service response in the callback.
+ * Calls the service. Returns the service response in the
+ * callback. Does nothing if this service is currently advertised.
  *
  * @param request - the ROSLIB.ServiceRequest to send
  * @param callback - function with params:
@@ -2179,17 +2180,22 @@ Service.prototype.callService = function(request, callback, failedCallback) {
     op : 'call_service',
     id : serviceCallId,
     service : this.name,
+    type: this.serviceType,
     args : request
   };
   this.ros.callOnConnection(call);
 };
 
 /**
- * Every time a message is published for the given topic, the callback
- * will be called with the message object.
+ * Advertise the service. This turns the Service object from a client
+ * into a server. The callback will be called with every request
+ * that's made on this service.
  *
- * @param callback - function with the following params:
- *   * message - the published message
+ * @param callback - This works similarly to the callback for a C++ service and should take the following params:
+ *   * request - the service request
+ *   * response - an empty dictionary. Take care not to overwrite this. Instead, only modify the values within.
+ *   It should return true if the service has finished successfully,
+ *   i.e. without any fatal errors.
  */
 Service.prototype.advertise = function(callback) {
   if (this.isAdvertised || typeof callback !== 'function') {
@@ -2236,6 +2242,7 @@ Service.prototype._serviceResponse = function(rosbridgeRequest) {
 };
 
 module.exports = Service;
+
 },{"./ServiceRequest":14,"./ServiceResponse":15,"eventemitter2":1}],14:[function(require,module,exports){
 /**
  * @fileoverview
@@ -2419,6 +2426,7 @@ var Message = require('./Message');
  *   * queue_size - the queue created at bridge side for re-publishing webtopics (defaults to 100)
  *   * latch - latch the topic when publishing
  *   * queue_length - the queue length at bridge side used when subscribing (defaults to 0, no queueing).
+ *   * reconnect_on_close - the flag to enable resubscription and readvertisement on close event(defaults to true).
  */
 function Topic(options) {
   options = options || {};
