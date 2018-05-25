@@ -23,14 +23,19 @@ var EventEmitter2 = require('eventemitter2').EventEmitter2;
  *  * <serviceID> - a service response came from rosbridge with the given ID
  *
  * @constructor
- * @param options - possible keys include:
- *   * url (optional) - the WebSocket URL for rosbridge (can be specified later with `connect`)
+ * @param options - possible keys include: <br>
+ *   * url (optional) - (can be specified later with `connect`) the WebSocket URL for rosbridge or the node server url to connect using socket.io (if socket.io exists in the page) <br>
+ *   * groovyCompatibility - don't use interfaces that changed after the last groovy release or rosbridge_suite and related tools (defaults to true)
+ *   * transportLibrary (optional) - one of 'websocket' (default), 'socket.io' or RTCPeerConnection instance controlling how the connection is created in `connect`.
+ *   * transportOptions (optional) - the options to use use when creating a connection. Currently only used if `transportLibrary` is RTCPeerConnection.
  */
 function Ros(options) {
   options = options || {};
   this.socket = null;
   this.idCounter = 0;
   this.isConnected = false;
+  this.transportLibrary = options.transportLibrary || 'websocket';
+  this.transportOptions = options.transportOptions || {};
 
   if (typeof options.groovyCompatibility === 'undefined') {
     this.groovyCompatibility = true;
@@ -53,10 +58,21 @@ Ros.prototype.__proto__ = EventEmitter2.prototype;
 /**
  * Connect to the specified WebSocket.
  *
- * @param url - WebSocket URL for Rosbridge
+ * @param url - WebSocket URL or RTCDataChannel label for Rosbridge
  */
 Ros.prototype.connect = function(url) {
-  this.socket = assign(new WebSocket(url), socketAdapter(this));
+  if (this.transportLibrary === 'socket.io') {
+    this.socket = assign(io(url, {'force new connection': true}), socketAdapter(this));
+    this.socket.on('connect', this.socket.onopen);
+    this.socket.on('data', this.socket.onmessage);
+    this.socket.on('close', this.socket.onclose);
+    this.socket.on('error', this.socket.onerror);
+  } else if (this.transportLibrary.constructor.name === 'RTCPeerConnection') {
+    this.socket = assign(this.transportLibrary.createDataChannel(url, this.transportOptions), socketAdapter(this));
+  }else {
+    this.socket = assign(new WebSocket(url), socketAdapter(this));
+  }
+
 };
 
 /**
@@ -102,13 +118,64 @@ Ros.prototype.authenticate = function(mac, client, dest, rand, t, level, end) {
 Ros.prototype.callOnConnection = function(message) {
   var that = this;
   var messageJson = JSON.stringify(message);
+  var emitter = null;
+  if (this.transportLibrary === 'socket.io') {
+    emitter = function(msg){that.socket.emit('operation', msg);};
+  } else {
+    emitter = function(msg){that.socket.send(msg);};
+  }
 
   if (!this.isConnected) {
     that.once('connection', function() {
-      that.socket.send(messageJson);
+      emitter(messageJson);
     });
   } else {
-    that.socket.send(messageJson);
+    emitter(messageJson);
+  }
+};
+
+/**
+ * Sends a set_level request to the server
+ *
+ * @param level - Status level (none, error, warning, info)
+ * @param id - Optional: Operation ID to change status level on
+ */
+Ros.prototype.setStatusLevel = function(level, id){
+  var levelMsg = {
+    op: 'set_level',
+    level: level,
+    id: id
+  };
+
+  this.callOnConnection(levelMsg);
+};
+
+/**
+ * Retrieves Action Servers in ROS as an array of string
+ *
+ *   * actionservers - Array of action server names
+ */
+Ros.prototype.getActionServers = function(callback, failedCallback) {
+  var getActionServers = new Service({
+    ros : this,
+    name : '/rosapi/action_servers',
+    serviceType : 'rosapi/GetActionServers'
+  });
+
+  var request = new ServiceRequest({});
+  if (typeof failedCallback === 'function'){
+    getActionServers.callService(request,
+      function(result) {
+        callback(result.action_servers);
+      },
+      function(message){
+        failedCallback(message);
+      }
+    );
+  }else{
+    getActionServers.callService(request, function(result) {
+      callback(result.action_servers);
+    });
   }
 };
 
@@ -129,7 +196,7 @@ Ros.prototype.getTopics = function(callback, failedCallback) {
   if (typeof failedCallback === 'function'){
     topicsClient.callService(request,
       function(result) {
-        callback(result.topics);
+        callback(result);
       },
       function(message){
         failedCallback(message);
@@ -137,7 +204,7 @@ Ros.prototype.getTopics = function(callback, failedCallback) {
     );
   }else{
     topicsClient.callService(request, function(result) {
-      callback(result.topics);
+      callback(result);
     });
   }
 };
@@ -239,6 +306,72 @@ Ros.prototype.getServicesForType = function(serviceType, callback, failedCallbac
 };
 
 /**
+ * Retrieves a detail of ROS service request.
+ *
+ * @param service name of service:
+ * @param callback - function with params:
+ *   * type - String of the service type
+ */
+Ros.prototype.getServiceRequestDetails = function(type, callback, failedCallback) {
+  var serviceTypeClient = new Service({
+    ros : this,
+    name : '/rosapi/service_request_details',
+    serviceType : 'rosapi/ServiceRequestDetails'
+  });
+  var request = new ServiceRequest({
+    type: type
+  });
+
+  if (typeof failedCallback === 'function'){
+    serviceTypeClient.callService(request,
+      function(result) {
+        callback(result);
+      },
+      function(message){
+        failedCallback(message);
+      }
+    );
+  }else{
+    serviceTypeClient.callService(request, function(result) {
+      callback(result);
+    });
+  }
+};
+
+/**
+ * Retrieves a detail of ROS service request.
+ *
+ * @param service name of service:
+ * @param callback - function with params:
+ *   * type - String of the service type
+ */
+Ros.prototype.getServiceResponseDetails = function(type, callback, failedCallback) {
+  var serviceTypeClient = new Service({
+    ros : this,
+    name : '/rosapi/service_response_details',
+    serviceType : 'rosapi/ServiceResponseDetails'
+  });
+  var request = new ServiceRequest({
+    type: type
+  });
+
+  if (typeof failedCallback === 'function'){
+    serviceTypeClient.callService(request,
+      function(result) {
+        callback(result);
+      },
+      function(message){
+        failedCallback(message);
+      }
+    );
+  }else{
+    serviceTypeClient.callService(request, function(result) {
+      callback(result);
+    });
+  }
+};
+
+/**
  * Retrieves list of active node names in ROS.
  *
  * @param callback - function with the following params:
@@ -264,6 +397,41 @@ Ros.prototype.getNodes = function(callback, failedCallback) {
   }else{
     nodesClient.callService(request, function(result) {
       callback(result.nodes);
+    });
+  }
+};
+
+/**
+  * Retrieves list subscribed topics, publishing topics and services of a specific node
+  *
+  * @param node name of the node:
+  * @param callback - function with params:
+  *   * publications - array of published topic names
+  *   * subscriptions - array of subscribed topic names
+  *   * services - array of service names hosted
+  */
+Ros.prototype.getNodeDetails = function(node, callback, failedCallback) {
+  var nodesClient = new Service({
+    ros : this,
+    name : '/rosapi/node_details',
+    serviceType : 'rosapi/NodeDetails'
+  });
+
+  var request = new ServiceRequest({
+    node: node
+  });
+  if (typeof failedCallback === 'function'){
+    nodesClient.callService(request,
+      function(result) {
+        callback(result.subscribing, result.publishing, result.services);
+      },
+      function(message) {
+        failedCallback(message);
+      }
+    );
+  } else {
+    nodesClient.callService(request, function(result) {
+      callback(result);
     });
   }
 };
@@ -431,7 +599,6 @@ Ros.prototype.decodeTypeDefs = function(defs) {
         if (sub) {
           var subResult = decodeTypeDefsRec(sub, hints);
           if (arrayLen === -1) {
-            typeDefDict[fieldName] = subResult;
           }
           else {
             typeDefDict[fieldName] = [subResult];
@@ -444,7 +611,7 @@ Ros.prototype.decodeTypeDefs = function(defs) {
     }
     return typeDefDict;
   };
-  
+
   return decodeTypeDefsRec(defs[0], defs);
 };
 
