@@ -122,7 +122,7 @@ Topic.prototype.unsubscribe = function(callback) {
     if (this.listeners('message').length) { return; }
   }
   if (!this.subscribeId) { return; }
-  // Note: Don't call this.removeAllListeners, allow client to handle that themselves
+  this.removeAllListeners();
   this.ros.off(this.name, this._messageCallback);
   if(this.reconnect_on_close) {
     this.ros.off('close', this.reconnectFunc);
